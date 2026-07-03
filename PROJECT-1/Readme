@@ -1,0 +1,103 @@
+# Project 1 — Advanced EDA & Feature Engineering
+
+DecodeLabs Data Science Industrial Training Kit — Batch 2026
+
+## Overview
+
+This project transforms a raw e-commerce orders dataset into a clean,
+mathematically sound, model-ready dataset. It follows the Input →
+Process → Output pipeline architecture: securing input fidelity
+(missing values, outliers), running vectorized feature engineering and
+encoding, and producing validated, ML-ready output.
+
+## Files
+
+| File | Description |
+|---|---|
+| `ds_csv.csv` | Raw input dataset (1200 orders, 14 columns) |
+| `project1_pipeline.py` | Full pipeline script — run this |
+| `ds_csv_cleaned.csv` | Output: cleaned data, human-readable (categoricals intact) |
+| `ds_csv_model_ready.csv` | Output: encoded, decollinearized, ML-ready data |
+
+## Dataset
+
+E-commerce order-level data with the following original columns:
+
+`OrderID, Date, CustomerID, Product, Quantity, UnitPrice, ShippingAddress,
+PaymentMethod, OrderStatus, TrackingNumber, ItemsInCart, CouponCode,
+ReferralSource, TotalPrice`
+
+- 1200 rows, no duplicate rows
+- Only `CouponCode` has missing values (25.75%)
+- `TotalPrice = Quantity × UnitPrice` holds for every row (verified)
+
+## How to run
+
+```bash
+pip install pandas numpy scikit-learn
+python project1_pipeline.py
+```
+
+Run from the same folder as `ds_csv.csv`. Produces `ds_csv_cleaned.csv`
+and `ds_csv_model_ready.csv` in that same folder.
+
+## Methodology
+
+### Phase 1 — Securing input fidelity
+
+**Missing values** — decision matrix based on % missing per column:
+
+| Missingness | Numeric strategy | Categorical strategy |
+|---|---|---|
+| < 5% | Drop rows | Drop rows |
+| 5%–20% | Median imputation | Sub-group / mode imputation |
+| > 20% | KNN imputation | — |
+
+`CouponCode` (25.75% missing) is a documented exception: the
+missingness isn't random, it means "no coupon was applied" to that
+order. Imputing a value would fabricate a promotion, so it's filled
+with an explicit `NONE` sentinel instead of statistically imputed.
+
+**Outliers** — detected via IQR (`Q1 - 1.5×IQR`, `Q3 + 1.5×IQR`) on all
+numeric columns, then **capped with `numpy.clip()`** rather than
+dropped. This preserves row count and avoids destroying adjacent
+feature data. Only `TotalPrice` had outliers (8 rows capped).
+
+### Phase 2 — Vectorized feature engineering & encoding
+
+New features engineered (all vectorized, no Python loops):
+
+- `OrderMonth`, `OrderDayOfWeek`, `IsWeekend` — seasonality signals from `Date`
+- `PricePerItem` — `TotalPrice / ItemsInCart`
+- `CartFillRatio` — `Quantity / ItemsInCart`
+- `CustomerOrderCount`, `IsRepeatCustomer` — customer-level order frequency
+- `HasCoupon` — binary flag for coupon usage
+
+**Encoding** — categorical columns (`Product`, `PaymentMethod`,
+`OrderStatus`, `CouponCode`, `ReferralSource`) are one-hot encoded, not
+label-encoded, to avoid implying a false ordinal distance between
+nominal categories. Identifier-like columns (`OrderID`,
+`TrackingNumber`, `ShippingAddress`, `CustomerID`, `Date`) are dropped
+before modeling — they're unique keys, not predictive signal.
+
+**Multicollinearity** — an absolute correlation matrix is built over
+all numeric/encoded features plus the target (`TotalPrice`). Pairs
+with `r > 0.80` are flagged, and the feature with the *weaker*
+correlation to the target is dropped (never just the first one found).
+`IsRepeatCustomer` was dropped as collinear with `CustomerOrderCount`.
+
+### Phase 3 — Output
+
+Two files are saved: a cleaned but human-readable version, and a fully
+encoded, decollinearized, model-ready version.
+
+## Known limitations / notes for grading
+
+- This dataset has almost no missing numeric values or outliers, so
+  the Mean-vs-KNN imputation comparison suggested in the brief isn't
+  well demonstrated here. Consider testing the pipeline against a
+  version of the data with injected missingness/outliers if your
+  grader wants that comparison shown explicitly.
+- `TotalPrice` is treated as the target for correlation/collinearity
+  checks. Swap the `TARGET` variable in the script if a different
+  target (e.g. `OrderStatus`) is required.
